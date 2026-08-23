@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tech Intelligence Digest</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { background: #0f172a; color: #e2e8f0; }
+    .score-bar { height: 6px; border-radius: 3px; background: #1e293b; overflow: hidden; }
+    .score-fill { height: 100%; border-radius: 3px; transition: width 0.6s ease; }
+    .article-card { transition: all 0.2s ease; border: 1px solid transparent; }
+    .article-card:hover { border-color: #334155; background: #1e293b; }
+    .horizon-BREAKING { color: #ef4444; }
+    .horizon-THIS_WEEK { color: #f59e0b; }
+    .horizon-CURRENT { color: #3b82f6; }
+    .horizon-EVERGREEN { color: #22c55e; }
+    .diagram-box { background: #1e293b; border-radius: 8px; padding: 16px; font-family: 'Courier New', monospace; font-size: 13px; line-height: 1.6; overflow-x: auto; white-space: pre; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+    .badge-ai { background: #3b0764; color: #d8b4fe; }
+    .badge-software { background: #064e3b; color: #6ee7b7; }
+    .badge-engineering { background: #1e3a5f; color: #93c5fd; }
+    #detail-modal { transition: opacity 0.2s ease; }
+    .search-highlight { background: #fef08a; color: #1e293b; padding: 0 2px; border-radius: 2px; }
+    @keyframes pulse-dot { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+    .loading-dot { animation: pulse-dot 1.4s infinite; }
+    .loading-dot:nth-child(2) { animation-delay: 0.2s; }
+    .loading-dot:nth-child(3) { animation-delay: 0.4s; }
+  </style>
+</head>
+<body class="min-h-screen">
+  <div class="max-w-5xl mx-auto px-4 py-6">
+    <!-- Header -->
+    <header class="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 gap-4">
+      <div>
+        <h1 class="text-2xl font-bold text-white tracking-tight">Tech Intelligence Digest</h1>
+        <p class="text-slate-400 text-sm mt-1">Today's most relevant software &amp; AI stories</p>
+      </div>
+      <div class="flex items-center gap-3 w-full sm:w-auto">
+        <div class="relative flex-1 sm:flex-none">
+          <input
+            id="search-input"
+            type="text"
+            placeholder="Search articles..."
+            class="w-full sm:w-64 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+          />
+          <span id="search-clear" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 cursor-pointer hidden text-lg leading-none">&times;</span>
+        </div>
+        <button id="refresh-btn" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-300 transition">
+          ↻ Refresh
+        </button>
+      </div>
+    </header>
+
+    <!-- Status Bar -->
+    <div id="status-bar" class="flex items-center gap-2 text-xs text-slate-500 mb-4">
+      <span id="status-text">Loading...</span>
+      <span class="loading-dot">.</span>
+      <span class="loading-dot">.</span>
+      <span class="loading-dot">.</span>
+    </div>
+
+    <!-- Error -->
+    <div id="error-bar" class="bg-red-900/50 border border-red-800 rounded-lg p-3 text-red-300 text-sm mb-4 hidden"></div>
+
+    <!-- View Toggle -->
+    <div class="flex items-center gap-2 mb-6">
+      <button id="view-top10" class="bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium px-4 py-1.5 rounded-lg transition">Top 10</button>
+      <button id="view-top50" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium px-4 py-1.5 rounded-lg transition">Top 50</button>
+      <span id="result-count" class="text-slate-500 text-xs ml-2"></span>
+    </div>
+
+    <!-- Article List -->
+    <div id="articles-container" class="space-y-3">
+      <!-- Rendered by JS -->
+    </div>
+
+    <!-- Loading -->
+    <div id="loading-more" class="text-center py-8 text-slate-500 text-sm hidden">
+      <span class="loading-dot">L</span>
+      <span class="loading-dot">o</span>
+      <span class="loading-dot">a</span>
+      <span class="loading-dot">d</span>
+      <span class="loading-dot">i</span>
+      <span class="loading-dot">n</span>
+      <span class="loading-dot">g</span>
+      <span class="loading-dot">.</span>
+      <span class="loading-dot">.</span>
+      <span class="loading-dot">.</span>
+    </div>
+  </div>
+
+  <!-- Detail Modal -->
+  <div id="detail-modal" class="fixed inset-0 bg-black/60 z-50 hidden items-center justify-center p-4" onclick="closeDetail(event)">
+    <div class="bg-slate-900 border border-slate-700 rounded-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto" onclick="event.stopPropagation()">
+      <div class="sticky top-0 bg-slate-900 border-b border-slate-700 px-6 py-4 flex items-center justify-between">
+        <h2 id="detail-title" class="text-lg font-bold text-white pr-4"></h2>
+        <button onclick="closeDetail()" class="text-slate-400 hover:text-white text-xl leading-none">&times;</button>
+      </div>
+      <div class="px-6 py-5 space-y-6">
+        <!-- Meta -->
+        <div id="detail-meta" class="flex flex-wrap gap-3 text-sm"></div>
+
+        <!-- Original link -->
+        <div id="detail-link" class="hidden">
+          <a target="_blank" rel="noopener" class="text-blue-400 hover:text-blue-300 underline text-sm break-all">Read original article →</a>
+        </div>
+
+        <!-- TL;DR -->
+        <div id="detail-tldr" class="hidden">
+          <h3 class="text-sm font-semibold text-slate-300 mb-2 uppercase tracking-wide">TL;DR</h3>
+          <div class="space-y-3 text-sm text-slate-300"></div>
+        </div>
+
+        <!-- Diagram -->
+        <div id="detail-diagram" class="hidden">
+          <h3 class="text-sm font-semibold text-slate-300 mb-2 uppercase tracking-wide">Concept Diagram</h3>
+          <div class="diagram-box"></div>
+        </div>
+
+        <!-- Hello World -->
+        <div id="detail-hello" class="hidden">
+          <h3 class="text-sm font-semibold text-slate-300 mb-2 uppercase tracking-wide">Hello World Example</h3>
+          <pre class="bg-slate-800 rounded-lg p-4 text-sm text-green-300 overflow-x-auto"></pre>
+        </div>
+
+        <!-- Practical Relevance -->
+        <div id="detail-relevance" class="hidden">
+          <h3 class="text-sm font-semibold text-slate-300 mb-2 uppercase tracking-wide">Practical Relevance</h3>
+          <p class="text-sm text-slate-300"></p>
+        </div>
+
+        <!-- Next Steps -->
+        <div id="detail-next" class="hidden">
+          <h3 class="text-sm font-semibold text-slate-300 mb-2 uppercase tracking-wide">Next Steps</h3>
+          <ul class="list-disc list-inside text-sm text-slate-300 space-y-1"></ul>
+        </div>
+
+        <!-- Scores -->
+        <div id="detail-scores" class="hidden">
+          <h3 class="text-sm font-semibold text-slate-300 mb-2 uppercase tracking-wide">Score Breakdown</h3>
+          <div class="grid grid-cols-2 gap-3"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ─── State ──────────────────────────────────────────
+    let allArticles = [];
+    let currentView = 10;
+    let searchQuery = '';
+    let isLoading = false;
+
+    // ─── Helpers ────────────────────────────────────────
+    function horizonClass(h) {
+      return 'horizon-' + (h || 'CURRENT');
+    }
+
+    function catBadge(cat) {
+      return `<span class="badge badge-${cat || 'engineering'}">${cat || 'engineering'}</span>`;
+    }
+
+    function scoreColor(score) {
+      if (score >= 70) return 'bg-green-500';
+      if (score >= 50) return 'bg-yellow-500';
+      if (score >= 30) return 'bg-orange-500';
+      return 'bg-red-500';
+    }
+
+    function formatDate(d) {
+      if (!d) return '';
+      try {
+        return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      } catch { return d; }
+    }
+
+    function truncate(text, len) {
+      if (!text) return '';
+      return text.length > len ? text.slice(0, len) + '…' : text;
+    }
+
+    // ─── Fetch ──────────────────────────────────────────
+    async function fetchArticles(limit) {
+      const res = await fetch(`/api/top?limit=${limit}`);
+      if (!res.ok) throw new Error(`API error: ${res.status}`);
+      return res.json();
+    }
+
+    async function searchArticles(q) {
+      const res = await fetch(`/api/search?q=${encodeURIComponent(q)}&limit=50`);
+      if (!res.ok) throw new Error(`Search error: ${res.status}`);
+      return res.json();
+    }
+
+    async function fetchDetail(id) {
+      const res = await fetch(`/api/article?id=${encodeURIComponent(id)}`);
+      if (!res.ok) throw new Error(`Detail error: ${res.status}`);
+      return res.json();
+    }
+
+    // ─── Render ─────────────────────────────────────────
+    function renderArticles(articles) {
+      const container = document.getElementById('articles-container');
+
+      if (articles.length === 0) {
+        container.innerHTML = '<div class="text-center py-12 text-slate-500"><p class="text-lg">No articles found</p><p class="text-sm mt-1">Try refreshing or check back later.</p></div>';
+        return;
+      }
+
+      container.innerHTML = articles.map((a) => {
+        const score = a.finalScore || 0;
+        const horizon = a.horizon || 'CURRENT';
+
+        return `
+          <div class="article-card bg-slate-800/50 rounded-xl p-4 cursor-pointer" onclick="openDetail('${(a.id || a.url).replace(/'/g, "\\'")}')">
+            <div class="flex items-start justify-between gap-4">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 mb-1">
+                  ${catBadge(a.category)}
+                  <span class="text-xs text-slate-500">${a.source || ''}</span>
+                  <span class="text-xs text-slate-600">·</span>
+                  <span class="text-xs text-slate-500">${formatDate(a.published)}</span>
+                </div>
+                <h3 class="text-base font-semibold text-white leading-snug mb-1">${a.title || 'Untitled'}</h3>
+                <p class="text-sm text-slate-400 line-clamp-2">${a.summary ? truncate(a.summary, 200) : ''}</p>
+                <div class="flex items-center gap-3 mt-2">
+                  <span class="text-xs font-medium ${horizonClass(horizon)}">${horizon}</span>
+                  ${a.enriched?.tldr ? `<span class="text-xs text-slate-500">· ${truncate(a.enriched.tldr, 80)}</span>` : ''}
+                </div>
+              </div>
+              <div class="flex-shrink-0 text-right min-w-[60px]">
+                <div class="text-lg font-bold ${score >= 60 ? 'text-green-400' : score >= 40 ? 'text-yellow-400' : 'text-slate-400'}">${score}</div>
+                <div class="score-bar mt-1">
+                  <div class="score-fill ${scoreColor(score)}" style="width:${score}%"></div>
+                </div>
+                <div class="text-[10px] text-slate-600 mt-0.5">relevance</div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // ─── Load ───────────────────────────────────────────
+    async function loadArticles(limit) {
+      if (isLoading) return;
+      isLoading = true;
+
+      const statusText = document.getElementById('status-text');
+      const errorBar = document.getElementById('error-bar');
+      const container = document.getElementById('articles-container');
+      const count = document.getElementById('result-count');
+
+      errorBar.classList.add('hidden');
+      statusText.textContent = 'Loading...';
+
+      try {
+        let data;
+        if (searchQuery) {
+          data = await searchArticles(searchQuery);
+          allArticles = data.results || [];
+        } else {
+          data = await fetchArticles(limit);
+          allArticles = data.articles || [];
+        }
+
+        renderArticles(allArticles);
+        count.textContent = `${allArticles.length} articles`;
+
+        const latest = allArticles[0];
+        if (latest && latest.published) {
+          statusText.textContent = `Updated ${formatDate(latest.published)} · ${allArticles.length} articles`;
+        } else {
+          statusText.textContent = `${allArticles.length} articles loaded`;
+        }
+      } catch (err) {
+        errorBar.textContent = 'Failed to load articles. Is the server running? ' + err.message;
+        errorBar.classList.remove('hidden');
+        container.innerHTML = '<div class="text-center py-12 text-slate-500"><p class="text-lg">Could not load articles</p><p class="text-sm mt-1">Make sure the server is running on port 3005</p></div>';
+        statusText.textContent = 'Error loading';
+      }
+
+      isLoading = false;
+    }
+
+    // ─── Detail ─────────────────────────────────────────
+    async function openDetail(id) {
+      const modal = document.getElementById('detail-modal');
+      const sections = {
+        title: document.getElementById('detail-title'),
+        meta: document.getElementById('detail-meta'),
+        link: document.getElementById('detail-link'),
+        tldr: document.getElementById('detail-tldr'),
+        diagram: document.getElementById('detail-diagram'),
+        hello: document.getElementById('detail-hello'),
+        relevance: document.getElementById('detail-relevance'),
+        next: document.getElementById('detail-next'),
+        scores: document.getElementById('detail-scores'),
+      };
+
+      // Reset
+      Object.values(sections).forEach((s) => { if (s.tagName !== 'H2') s.classList.add('hidden'); });
+      sections.title.textContent = 'Loading...';
+      modal.classList.remove('hidden');
+      modal.style.display = 'flex';
+
+      try {
+        const a = await fetchDetail(id);
+        sections.title.textContent = a.title || 'Untitled';
+        sections.meta.innerHTML = `
+          ${catBadge(a._category)}
+          <span class="text-slate-400 text-sm">${a._sourceName || a.source || ''}</span>
+          <span class="text-slate-600">·</span>
+          <span class="text-slate-400 text-sm">${formatDate(a.published)}</span>
+          <span class="text-slate-600">·</span>
+          <span class="${horizonClass(a._horizon)} text-sm font-medium">${a._horizon || 'CURRENT'}</span>
+          <span class="text-slate-600">·</span>
+          <span class="text-slate-300 text-sm font-bold">${a._finalScore || 0}/100</span>
+        `;
+
+        // Original link
+        if (a.url) {
+          sections.link.classList.remove('hidden');
+          sections.link.querySelector('a').href = a.url;
+          sections.link.querySelector('a').textContent = `Read original article: ${a.url.slice(0, 80)}${a.url.length > 80 ? '…' : ''}`;
+        }
+
+        const enr = a._enriched || {};
+        const tldr = enr.tldr || {};
+
+        // TL;DR
+        if (tldr.WHAT_HAPPENED || tldr.WHY_CARE) {
+          sections.tldr.classList.remove('hidden');
+          const div = sections.tldr.querySelector('div');
+          div.innerHTML = '';
+          for (const [key, label] of [
+            ['WHAT_HAPPENED', 'What Happened'],
+            ['WHY_CARE', 'Why Should I Care'],
+            ['WHAT_CHANGED', 'What Changed'],
+            ['WHO_AFFECTED', 'Who Is Affected'],
+            ['WHAT_CAN_I_DO', 'What Can I Do With It'],
+            ['SHOULD_LEARN', 'Should I Learn It'],
+          ]) {
+            if (tldr[key]) {
+              const val = tldr[key];
+              // WHAT_CAN_I_DO is a URL — render as a clickable link
+              let rendered = val;
+              if (key === 'WHAT_CAN_I_DO' && (val.startsWith('http://') || val.startsWith('https://'))) {
+                rendered = `<a href="${val}" target="_blank" rel="noopener" class="text-blue-400 hover:text-blue-300 underline break-all">${val}</a>`;
+              }
+              div.innerHTML += `
+                <div>
+                  <span class="font-semibold text-slate-400 text-xs uppercase tracking-wide">${label}</span>
+                  <p class="mt-0.5">${rendered}</p>
+                </div>
+              `;
+            }
+          }
+        }
+
+        // Diagram
+        if (enr.diagram) {
+          sections.diagram.classList.remove('hidden');
+          sections.diagram.querySelector('.diagram-box').textContent = enr.diagram;
+        }
+
+        // Hello World
+        if (enr.hello_world && enr.hello_world !== 'N/A') {
+          sections.hello.classList.remove('hidden');
+          sections.hello.querySelector('pre').textContent = enr.hello_world;
+        }
+
+        // Practical Relevance
+        if (enr.practical_relevance) {
+          sections.relevance.classList.remove('hidden');
+          sections.relevance.querySelector('p').textContent = enr.practical_relevance;
+        }
+
+        // Next Steps
+        if (enr.next_steps && enr.next_steps.length > 0) {
+          sections.next.classList.remove('hidden');
+          const ul = sections.next.querySelector('ul');
+          ul.innerHTML = enr.next_steps.map((s) => `<li>${s}</li>`).join('');
+        }
+
+        // Scores
+        if (a._scores) {
+          sections.scores.classList.remove('hidden');
+          const grid = sections.scores.querySelector('.grid');
+          grid.innerHTML = '';
+          for (const [key, val] of Object.entries(a._scores)) {
+            const pct = Math.min(100, (val / 10) * 100);
+            const color = val >= 7 ? 'bg-green-500' : val >= 4 ? 'bg-yellow-500' : 'bg-red-500';
+            const label = key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+            grid.innerHTML += `
+              <div>
+                <div class="flex items-center justify-between text-xs mb-1">
+                  <span class="text-slate-400">${label}</span>
+                  <span class="text-slate-300 font-medium">${val}/10</span>
+                </div>
+                <div class="score-bar">
+                  <div class="score-fill ${color}" style="width:${pct}%"></div>
+                </div>
+              </div>
+            `;
+          }
+        }
+
+      } catch (err) {
+        sections.title.textContent = 'Error loading article';
+        sections.meta.innerHTML = `<span class="text-red-400 text-sm">${err.message}</span>`;
+      }
+    }
+
+    function closeDetail(e) {
+      if (e && e.target !== document.getElementById('detail-modal')) return;
+      document.getElementById('detail-modal').style.display = 'none';
+    }
+
+    // Close on Escape
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeDetail();
+    });
+
+    // ─── View toggle ────────────────────────────────────
+    document.getElementById('view-top10').addEventListener('click', () => {
+      currentView = 10;
+      document.getElementById('view-top10').className = 'bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium px-4 py-1.5 rounded-lg transition';
+      document.getElementById('view-top50').className = 'bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium px-4 py-1.5 rounded-lg transition';
+      loadArticles(10);
+    });
+
+    document.getElementById('view-top50').addEventListener('click', () => {
+      currentView = 50;
+      document.getElementById('view-top50').className = 'bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium px-4 py-1.5 rounded-lg transition';
+      document.getElementById('view-top10').className = 'bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium px-4 py-1.5 rounded-lg transition';
+      loadArticles(50);
+    });
+
+    // ─── Search ─────────────────────────────────────────
+    let searchTimer;
+    document.getElementById('search-input').addEventListener('input', (e) => {
+      clearTimeout(searchTimer);
+      searchQuery = e.target.value.trim();
+      const clearBtn = document.getElementById('search-clear');
+      clearBtn.style.display = searchQuery ? 'block' : 'none';
+
+      searchTimer = setTimeout(() => {
+        if (searchQuery) {
+          loadArticles(50);
+        } else {
+          loadArticles(currentView);
+        }
+      }, 300);
+    });
+
+    document.getElementById('search-clear').addEventListener('click', () => {
+      document.getElementById('search-input').value = '';
+      searchQuery = '';
+      document.getElementById('search-clear').style.display = 'none';
+      loadArticles(currentView);
+    });
+
+    // ─── Refresh ────────────────────────────────────────
+    document.getElementById('refresh-btn').addEventListener('click', () => {
+      const btn = document.getElementById('refresh-btn');
+      btn.textContent = '⟳ Refreshing...';
+      btn.disabled = true;
+
+      fetch('/api/fetch', { method: 'POST' }).then(() => {
+        setTimeout(() => {
+          loadArticles(currentView);
+          btn.textContent = '↻ Refresh';
+          btn.disabled = false;
+        }, 2000);
+      }).catch(() => {
+        btn.textContent = '↻ Refresh';
+        btn.disabled = false;
+      });
+    });
+
+    // ─── Init ───────────────────────────────────────────
+    loadArticles(10);
+  </script>
+</body>
+</html>

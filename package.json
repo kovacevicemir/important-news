@@ -1,0 +1,22 @@
+{
+  "name": "important-news",
+  "version": "1.0.0",
+  "description": "Tech Intelligence Digest — Scrapes, filters, ranks, and presents the most relevant software & AI articles",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "scrape": "node src/scraper.js",
+    "rank": "node src/ranker.js --latest",
+    "enrich": "node src/summarizer.js --latest",
+    "pipeline": "node src/scraper.js && node src/ranker.js --latest && node src/summarizer.js --latest"
+  },
+  "keywords": ["news", "ai", "software", "rss", "digest"],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "cheerio": "^1.2.0",
+    "express": "^5.2.1",
+    "rss-parser": "^3.13.0"
+  }
+}
