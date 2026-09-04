@@ -204,8 +204,9 @@ Blocked content is filtered at scrape time (Stage 1) to avoid wasting resources 
 Single-page app using Tailwind CSS (CDN).
 
 Features:
-- **Top 10** view (default) with relevance scores and importance horizons
-- **Top 50** expand button
+- **50 articles per day** — always shows top 50 ranked articles
+- **Date navigation** — browse previous/next day with ← → buttons
+- **Today's articles highlighted** — articles published on the selected date get a blue left border and "today" badge
 - **Full-text search** across all historical datasets
 - **Article detail modal** with TL;DR, diagram, hello-world example, next steps
 - **Score breakdown** visualization

@@ -11,10 +11,6 @@
     .score-fill { height: 100%; border-radius: 3px; transition: width 0.6s ease; }
     .article-card { transition: all 0.2s ease; border: 1px solid transparent; }
     .article-card:hover { border-color: #334155; background: #1e293b; }
-    .horizon-BREAKING { color: #ef4444; }
-    .horizon-THIS_WEEK { color: #f59e0b; }
-    .horizon-CURRENT { color: #3b82f6; }
-    .horizon-EVERGREEN { color: #22c55e; }
     .diagram-box { background: #1e293b; border-radius: 8px; padding: 16px; font-family: 'Courier New', monospace; font-size: 13px; line-height: 1.6; overflow-x: auto; white-space: pre; }
     .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
     .badge-ai { background: #3b0764; color: #d8b4fe; }
@@ -26,15 +22,18 @@
     .loading-dot { animation: pulse-dot 1.4s infinite; }
     .loading-dot:nth-child(2) { animation-delay: 0.2s; }
     .loading-dot:nth-child(3) { animation-delay: 0.4s; }
+    .date-nav-btn { transition: all 0.15s ease; }
+    .date-nav-btn:hover { background: #334155; }
+    .date-nav-btn:disabled { opacity: 0.3; cursor: not-allowed; }
   </style>
 </head>
 <body class="min-h-screen">
   <div class="max-w-5xl mx-auto px-4 py-6">
     <!-- Header -->
-    <header class="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 gap-4">
+    <header class="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4">
       <div>
         <h1 class="text-2xl font-bold text-white tracking-tight">Tech Intelligence Digest</h1>
-        <p class="text-slate-400 text-sm mt-1">Today's most relevant software &amp; AI stories</p>
+        <p class="text-slate-400 text-sm mt-1">Top 50 stories — curated daily</p>
       </div>
       <div class="flex items-center gap-3 w-full sm:w-auto">
         <div class="relative flex-1 sm:flex-none">
@@ -52,6 +51,20 @@
       </div>
     </header>
 
+    <!-- Date Navigation -->
+    <div class="flex items-center justify-between bg-slate-800/50 rounded-xl px-4 py-3 mb-4">
+      <button id="prev-date" class="date-nav-btn bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg px-3 py-1.5 text-sm font-medium disabled:opacity-30 disabled:cursor-not-allowed">
+        ← Previous
+      </button>
+      <div class="flex items-center gap-3">
+        <span id="current-date-display" class="text-white font-semibold text-base"></span>
+        <span id="date-article-count" class="text-slate-500 text-xs"></span>
+      </div>
+      <button id="next-date" class="date-nav-btn bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg px-3 py-1.5 text-sm font-medium disabled:opacity-30 disabled:cursor-not-allowed">
+        Next →
+      </button>
+    </div>
+
     <!-- Status Bar -->
     <div id="status-bar" class="flex items-center gap-2 text-xs text-slate-500 mb-4">
       <span id="status-text">Loading...</span>
@@ -62,13 +75,6 @@
 
     <!-- Error -->
     <div id="error-bar" class="bg-red-900/50 border border-red-800 rounded-lg p-3 text-red-300 text-sm mb-4 hidden"></div>
-
-    <!-- View Toggle -->
-    <div class="flex items-center gap-2 mb-6">
-      <button id="view-top10" class="bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium px-4 py-1.5 rounded-lg transition">Top 10</button>
-      <button id="view-top50" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium px-4 py-1.5 rounded-lg transition">Top 50</button>
-      <span id="result-count" class="text-slate-500 text-xs ml-2"></span>
-    </div>
 
     <!-- Article List -->
     <div id="articles-container" class="space-y-3">
@@ -148,15 +154,12 @@
   <script>
     // ─── State ──────────────────────────────────────────
     let allArticles = [];
-    let currentView = 10;
+    let currentDate = null;
+    let availableDates = [];
     let searchQuery = '';
     let isLoading = false;
 
     // ─── Helpers ────────────────────────────────────────
-    function horizonClass(h) {
-      return 'horizon-' + (h || 'CURRENT');
-    }
-
     function catBadge(cat) {
       return `<span class="badge badge-${cat || 'engineering'}">${cat || 'engineering'}</span>`;
     }
@@ -175,14 +178,33 @@
       } catch { return d; }
     }
 
+    function formatDateShort(d) {
+      if (!d) return '';
+      try {
+        const dt = new Date(d);
+        const month = dt.toLocaleString('en-US', { month: 'short' });
+        const day = dt.getDate();
+        const year = dt.getFullYear();
+        return `${month} ${day}, ${year}`;
+      } catch { return d; }
+    }
+
     function truncate(text, len) {
       if (!text) return '';
       return text.length > len ? text.slice(0, len) + '…' : text;
     }
 
     // ─── Fetch ──────────────────────────────────────────
-    async function fetchArticles(limit) {
-      const res = await fetch(`/api/top?limit=${limit}`);
+    async function fetchArticles(date, limit) {
+      let url = `/api/top?limit=${limit}`;
+      if (date) url += `&date=${encodeURIComponent(date)}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`API error: ${res.status}`);
+      return res.json();
+    }
+
+    async function fetchDates() {
+      const res = await fetch('/api/dates');
       if (!res.ok) throw new Error(`API error: ${res.status}`);
       return res.json();
     }
@@ -199,18 +221,39 @@
       return res.json();
     }
 
+    // ─── Date Navigation ────────────────────────────────
+    function updateDateNav() {
+      const prevBtn = document.getElementById('prev-date');
+      const nextBtn = document.getElementById('next-date');
+      const display = document.getElementById('current-date-display');
+
+      if (!currentDate) {
+        display.textContent = 'No data';
+        prevBtn.disabled = true;
+        nextBtn.disabled = true;
+        return;
+      }
+
+      display.textContent = formatDateShort(currentDate);
+
+      const idx = availableDates.indexOf(currentDate);
+      prevBtn.disabled = idx >= availableDates.length - 1;
+      nextBtn.disabled = idx <= 0;
+    }
+
     // ─── Render ─────────────────────────────────────────
-    function renderArticles(articles) {
+    function renderArticles(articles, dateStr) {
       const container = document.getElementById('articles-container');
 
       if (articles.length === 0) {
-        container.innerHTML = '<div class="text-center py-12 text-slate-500"><p class="text-lg">No articles found</p><p class="text-sm mt-1">Try refreshing or check back later.</p></div>';
+        container.innerHTML = '<div class="text-center py-12 text-slate-500"><p class="text-lg">No articles found</p><p class="text-sm mt-1">Try a different date or refresh.</p></div>';
         return;
       }
 
       container.innerHTML = articles.map((a) => {
         const score = a.finalScore || 0;
-        const horizon = a.horizon || 'CURRENT';
+        const publishedDate = formatDate(a.published);
+        const fetchedDate = a.fetchedDate || dateStr;
 
         return `
           <div class="article-card bg-slate-800/50 rounded-xl p-4 cursor-pointer" onclick="openDetail('${(a.id || a.url).replace(/'/g, "\\'")}')">
@@ -220,12 +263,13 @@
                   ${catBadge(a.category)}
                   <span class="text-xs text-slate-500">${a.source || ''}</span>
                   <span class="text-xs text-slate-600">·</span>
-                  <span class="text-xs text-slate-500">${formatDate(a.published)}</span>
+                  <span class="text-xs text-slate-500">pub: ${publishedDate}</span>
+                  <span class="text-xs text-slate-600">·</span>
+                  <span class="text-xs text-slate-400">fetched: ${fetchedDate}</span>
                 </div>
                 <h3 class="text-base font-semibold text-white leading-snug mb-1">${a.title || 'Untitled'}</h3>
                 <p class="text-sm text-slate-400 line-clamp-2">${a.summary ? truncate(a.summary, 200) : ''}</p>
                 <div class="flex items-center gap-3 mt-2">
-                  <span class="text-xs font-medium ${horizonClass(horizon)}">${horizon}</span>
                   ${a.enriched?.tldr ? `<span class="text-xs text-slate-500">· ${truncate(a.enriched.tldr, 80)}</span>` : ''}
                 </div>
               </div>
@@ -243,34 +287,52 @@
     }
 
     // ─── Load ───────────────────────────────────────────
-    async function loadArticles(limit) {
+    async function loadArticles(date) {
       if (isLoading) return;
       isLoading = true;
 
       const statusText = document.getElementById('status-text');
       const errorBar = document.getElementById('error-bar');
       const container = document.getElementById('articles-container');
-      const count = document.getElementById('result-count');
+      const countEl = document.getElementById('date-article-count');
 
       errorBar.classList.add('hidden');
       statusText.textContent = 'Loading...';
 
       try {
+        // Get available dates first
+        const datesData = await fetchDates();
+        availableDates = datesData.dates || [];
+
+        if (date) {
+          currentDate = date;
+        } else if (availableDates.length > 0) {
+          currentDate = availableDates[0];
+        } else {
+          currentDate = null;
+        }
+
+        updateDateNav();
+
         let data;
         if (searchQuery) {
           data = await searchArticles(searchQuery);
           allArticles = data.results || [];
-        } else {
-          data = await fetchArticles(limit);
+          // Disable date nav during search
+          document.getElementById('prev-date').disabled = true;
+          document.getElementById('next-date').disabled = true;
+        } else if (currentDate) {
+          data = await fetchArticles(currentDate, 50);
           allArticles = data.articles || [];
+        } else {
+          allArticles = [];
         }
 
-        renderArticles(allArticles);
-        count.textContent = `${allArticles.length} articles`;
+        renderArticles(allArticles, currentDate);
+        countEl.textContent = `${allArticles.length} articles`;
 
-        const latest = allArticles[0];
-        if (latest && latest.published) {
-          statusText.textContent = `Updated ${formatDate(latest.published)} · ${allArticles.length} articles`;
+        if (currentDate) {
+          statusText.textContent = `Digest: ${formatDateShort(currentDate)} · ${allArticles.length} articles`;
         } else {
           statusText.textContent = `${allArticles.length} articles loaded`;
         }
@@ -283,6 +345,27 @@
 
       isLoading = false;
     }
+
+    // ─── Date navigation handlers ───────────────────────
+    document.getElementById('prev-date').addEventListener('click', () => {
+      const idx = availableDates.indexOf(currentDate);
+      if (idx < availableDates.length - 1) {
+        searchQuery = '';
+        document.getElementById('search-input').value = '';
+        document.getElementById('search-clear').style.display = 'none';
+        loadArticles(availableDates[idx + 1]);
+      }
+    });
+
+    document.getElementById('next-date').addEventListener('click', () => {
+      const idx = availableDates.indexOf(currentDate);
+      if (idx > 0) {
+        searchQuery = '';
+        document.getElementById('search-input').value = '';
+        document.getElementById('search-clear').style.display = 'none';
+        loadArticles(availableDates[idx - 1]);
+      }
+    });
 
     // ─── Detail ─────────────────────────────────────────
     async function openDetail(id) {
@@ -308,13 +391,13 @@
       try {
         const a = await fetchDetail(id);
         sections.title.textContent = a.title || 'Untitled';
+        const fetchedDate = a._fetchedDate ? a._fetchedDate.slice(0, 10) : '';
         sections.meta.innerHTML = `
           ${catBadge(a._category)}
           <span class="text-slate-400 text-sm">${a._sourceName || a.source || ''}</span>
           <span class="text-slate-600">·</span>
-          <span class="text-slate-400 text-sm">${formatDate(a.published)}</span>
-          <span class="text-slate-600">·</span>
-          <span class="${horizonClass(a._horizon)} text-sm font-medium">${a._horizon || 'CURRENT'}</span>
+          <span class="text-slate-400 text-sm">pub: ${formatDate(a.published)}</span>
+          ${fetchedDate ? `<span class="text-slate-600">·</span><span class="text-slate-400 text-sm">fetched: ${fetchedDate}</span>` : ''}
           <span class="text-slate-600">·</span>
           <span class="text-slate-300 text-sm font-bold">${a._finalScore || 0}/100</span>
         `;
@@ -344,7 +427,6 @@
           ]) {
             if (tldr[key]) {
               const val = tldr[key];
-              // WHAT_CAN_I_DO is a URL — render as a clickable link
               let rendered = val;
               if (key === 'WHAT_CAN_I_DO' && (val.startsWith('http://') || val.startsWith('https://'))) {
                 rendered = `<a href="${val}" target="_blank" rel="noopener" class="text-blue-400 hover:text-blue-300 underline break-all">${val}</a>`;
@@ -423,21 +505,6 @@
       if (e.key === 'Escape') closeDetail();
     });
 
-    // ─── View toggle ────────────────────────────────────
-    document.getElementById('view-top10').addEventListener('click', () => {
-      currentView = 10;
-      document.getElementById('view-top10').className = 'bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium px-4 py-1.5 rounded-lg transition';
-      document.getElementById('view-top50').className = 'bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium px-4 py-1.5 rounded-lg transition';
-      loadArticles(10);
-    });
-
-    document.getElementById('view-top50').addEventListener('click', () => {
-      currentView = 50;
-      document.getElementById('view-top50').className = 'bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium px-4 py-1.5 rounded-lg transition';
-      document.getElementById('view-top10').className = 'bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium px-4 py-1.5 rounded-lg transition';
-      loadArticles(50);
-    });
-
     // ─── Search ─────────────────────────────────────────
     let searchTimer;
     document.getElementById('search-input').addEventListener('input', (e) => {
@@ -447,11 +514,7 @@
       clearBtn.style.display = searchQuery ? 'block' : 'none';
 
       searchTimer = setTimeout(() => {
-        if (searchQuery) {
-          loadArticles(50);
-        } else {
-          loadArticles(currentView);
-        }
+        loadArticles(currentDate);
       }, 300);
     });
 
@@ -459,7 +522,7 @@
       document.getElementById('search-input').value = '';
       searchQuery = '';
       document.getElementById('search-clear').style.display = 'none';
-      loadArticles(currentView);
+      loadArticles(currentDate);
     });
 
     // ─── Refresh ────────────────────────────────────────
@@ -470,7 +533,7 @@
 
       fetch('/api/fetch', { method: 'POST' }).then(() => {
         setTimeout(() => {
-          loadArticles(currentView);
+          loadArticles(currentDate);
           btn.textContent = '↻ Refresh';
           btn.disabled = false;
         }, 2000);
@@ -481,7 +544,7 @@
     });
 
     // ─── Init ───────────────────────────────────────────
-    loadArticles(10);
+    loadArticles(null);
   </script>
 </body>
 </html>

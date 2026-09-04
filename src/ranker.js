@@ -275,20 +275,6 @@ function scoreArticle(article, allArticles) {
 }
 
 /**
- * Determine importance horizon.
- */
-function determineHorizon(article, finalScore) {
-  const title = (article.title || '').toLowerCase();
-  if (title.includes('cve') || title.includes('vulnerability') ||
-      title.includes('emergency') || title.includes('zero-day')) {
-    return 'BREAKING';
-  }
-  if (finalScore >= 75) return 'THIS_WEEK';
-  if (finalScore >= 50) return 'CURRENT';
-  return 'EVERGREEN';
-}
-
-/**
  * Rank a batch of articles and return top N.
  */
 function rankArticles(articles, topN = 50) {
@@ -296,12 +282,14 @@ function rankArticles(articles, topN = 50) {
 
   const scored = articles.map((article) => {
     const { scores, finalScore } = scoreArticle(article, articles);
+    const now = new Date();
     return {
       ...article,
       _scores: scores,
       _finalScore: finalScore,
-      _horizon: determineHorizon(article, finalScore),
-      _rankedAt: new Date().toISOString(),
+      _fetchedAt: now.toISOString(),
+      _fetchedDate: now.toISOString().slice(0, 10), // YYYY-MM-DD
+      _rankedAt: now.toISOString(),
     };
   });
 
